@@ -3,3 +3,5 @@ pandas
 textblob
 Pillow
 matplotlib
+openpyxl
+PyMuPDF

@@ -1,22 +1,71 @@
 
 import streamlit as st
 import pandas as pd
+import fitz  # PyMuPDF
 from PIL import Image
 from textblob import TextBlob
 import matplotlib.pyplot as plt
 
-# ------------------ LOGIN ------------------
-def login():
-    st.sidebar.title("🔐 Login")
-    username = st.sidebar.text_input("Username")
-    password = st.sidebar.text_input("Password", type="password")
-    if username == "shvan" and password == "shvan1234":
-        return True
-    elif username or password:
-        st.sidebar.error("❌ Incorrect username or password")
-    return False
+st.set_page_config(page_title="PUK AI Dashboard", layout="centered")
 
-# ------------------ ANALYSIS FUNCTIONS ------------------
+# ----------- Style -----------
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f9f9f9;
+        padding: 1rem;
+        border-radius: 12px;
+    }
+    .block-container {
+        padding: 1rem 2rem;
+    }
+    .title-style {
+        font-size: 2.3rem;
+        text-align: center;
+        color: #1a4d2e;
+    }
+    .subtitle {
+        font-size: 1.2rem;
+        color: #555;
+    }
+    .footer {
+        text-align: right;
+        font-size: 13px;
+        color: gray;
+        margin-top: 50px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ----------- Language Labels -----------
+langs = {
+    "English": {
+        "login": "Login",
+        "username": "Username",
+        "password": "Password",
+        "dashboard_title": "PUK Election AI Dashboard",
+        "section_title": "📥 Analyze Comments",
+        "facebook_section": "📘 Facebook Post Analyzer",
+        "paste_post": "Paste Facebook post content below:",
+        "analyze": "Analyze",
+        "upload_file": "Upload CSV, Excel, or PDF",
+        "summary": "📊 Summary Charts",
+        "sentiment_chart": "Sentiment",
+        "topic_chart": "Top 5 Topics"
+    }
+}
+
+# ----------- Login Screen -----------
+def login_screen(language):
+    st.image("puk_logo.png", width=110)
+    st.markdown(f"<h1 class='title-style'>PUK AI Dashboard</h1>", unsafe_allow_html=True)
+    with st.form("login_form"):
+        username = st.text_input(langs[language]["username"])
+        password = st.text_input(langs[language]["password"], type="password")
+        submit = st.form_submit_button(langs[language]["login"])
+        return username == "shvan" and password == "shvan1234" and submit
+
+# ----------- Analysis Functions -----------
 def analyze_sentiment(text):
     return TextBlob(text).sentiment.polarity
 
@@ -45,56 +94,73 @@ def score_support(text):
         return "Supports PUK" if polarity > 0 else "Criticizes PUK" if polarity < 0 else "Mentions PUK"
     return "No Mention"
 
-# ------------------ CHARTS ------------------
-def show_charts(df):
-    st.subheader("📊 Summary Charts")
+def show_charts(df, lang):
+    st.subheader(langs[lang]["summary"])
     col1, col2 = st.columns(2)
 
     with col1:
         sentiment_counts = df["Sentiment"].value_counts()
-        st.markdown("**Sentiment Distribution**")
         fig1, ax1 = plt.subplots()
-        ax1.pie(sentiment_counts, labels=sentiment_counts.index, autopct="%1.1f%%")
+        ax1.pie(sentiment_counts, labels=sentiment_counts.index, autopct="%1.1f%%", startangle=90)
         ax1.axis("equal")
+        st.markdown(f"**{langs[lang]['sentiment_chart']}**")
         st.pyplot(fig1)
 
     with col2:
         topic_counts = df["Topic"].value_counts().head(5)
-        st.markdown("**Top 5 Topics**")
         fig2, ax2 = plt.subplots()
-        ax2.bar(topic_counts.index, topic_counts.values)
+        ax2.bar(topic_counts.index, topic_counts.values, width=0.4)
         plt.xticks(rotation=15)
+        st.markdown(f"**{langs[lang]['topic_chart']}**")
         st.pyplot(fig2)
 
-# ------------------ MAIN APP ------------------
-def main_app():
-    st.image("puk_logo.png", width=150)
-    st.title("PUK Election AI Dashboard")
+def extract_text_from_pdf(file):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    return "\n".join([page.get_text() for page in doc])
 
-    st.markdown("""
-Analyze Facebook comments or posts to detect:
-- Sentiment
-- Topic
-- PUK Support
-- Visual summaries
-""")
+# ----------- Main App -----------
+def main_app(lang):
+    st.markdown("<div class='main'>", unsafe_allow_html=True)
+    st.markdown(f"<h2 class='subtitle'>{langs[lang]['dashboard_title']}</h2>", unsafe_allow_html=True)
 
-    st.subheader("📥 Paste or Upload Comments")
-    text_input = st.text_area("Paste comments/posts (one per line)", height=200)
-    uploaded = st.file_uploader("Or upload CSV with 'comment' column")
+    st.subheader(langs[lang]["facebook_section"])
+    post_text = st.text_area(langs[lang]["paste_post"])
+    if st.button(langs[lang]["analyze"] + " Post"):
+        if post_text.strip():
+            df = pd.DataFrame([post_text], columns=["Comment"])
+            df["Sentiment Score"] = df["Comment"].apply(analyze_sentiment)
+            df["Sentiment"] = df["Sentiment Score"].apply(label_sentiment)
+            df["Topic"] = df["Comment"].apply(detect_topic)
+            df["PUK Support"] = df["Comment"].apply(score_support)
+            st.dataframe(df)
 
-    if st.button("Analyze") or uploaded:
+    st.subheader(langs[lang]["section_title"])
+    text_input = st.text_area("Enter comments (one per line)", height=150)
+    uploaded = st.file_uploader(langs[lang]["upload_file"], type=["csv", "xlsx", "pdf"])
+
+    if st.button(langs[lang]["analyze"]) or uploaded:
         if text_input.strip():
             comments = [c.strip() for c in text_input.split("\n") if c.strip()]
             df = pd.DataFrame(comments, columns=["Comment"])
         elif uploaded:
-            df = pd.read_csv(uploaded)
-            if "comment" not in df.columns:
-                st.error("CSV must include a column named 'comment'")
+            try:
+                if uploaded.name.endswith(".xlsx"):
+                    df = pd.read_excel(uploaded)
+                elif uploaded.name.endswith(".csv"):
+                    df = pd.read_csv(uploaded)
+                elif uploaded.name.endswith(".pdf"):
+                    text = extract_text_from_pdf(uploaded)
+                    comments = [c.strip() for c in text.split("\n") if c.strip()]
+                    df = pd.DataFrame(comments, columns=["Comment"])
+                else:
+                    st.error("Unsupported file format.")
+                    return
+                if "Comment" not in df.columns and "comment" in df.columns:
+                    df.rename(columns={"comment": "Comment"}, inplace=True)
+            except Exception as e:
+                st.error(f"File error: {e}")
                 return
-            df.rename(columns={"comment": "Comment"}, inplace=True)
         else:
-            st.warning("Please paste text or upload a file.")
             return
 
         df["Sentiment Score"] = df["Comment"].apply(analyze_sentiment)
@@ -102,14 +168,13 @@ Analyze Facebook comments or posts to detect:
         df["Topic"] = df["Comment"].apply(detect_topic)
         df["PUK Support"] = df["Comment"].apply(score_support)
         st.dataframe(df)
-        show_charts(df)
+        show_charts(df, lang)
 
-    st.markdown("""<div style='text-align: right; color: gray; font-size: 13px; margin-top: 100px;'>
-    Prepared by <strong>Shvan Qaraman</strong>
-    </div>""", unsafe_allow_html=True)
+    st.markdown(f"<div class='footer'>Prepared by <strong>Shvan Qaraman</strong></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ------------------ RUN ------------------
-if login():
-    main_app()
-else:
-    st.stop()
+# ----------- Run App -----------
+lang = "English"
+if login_screen(lang):
+    st.empty()
+    main_app(lang)
