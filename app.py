@@ -60,7 +60,7 @@ def login_screen():
         submit = st.form_submit_button(langs[language]["login"])
         if submit and username == "shvan" and password == "shvan1234":
             st.session_state.authenticated = True
-            st.experimental_rerun()
+            st.rerun()
 
 # Analysis logic
 def analyze_sentiment(text): return TextBlob(text).sentiment.polarity
